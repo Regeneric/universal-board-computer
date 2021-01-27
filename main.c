@@ -74,7 +74,7 @@ int main() {
 	uint8_t i = 0;              // counter variable
 	uint8_t buttonPressed = 0;  // keeps track if button is pressed, 0 false, 1 true
 
-    // loadData();
+    loadData();
     char buffer[8];
     LCD.init();
 

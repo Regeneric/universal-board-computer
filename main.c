@@ -294,7 +294,7 @@ void saveData() {
 
     eeprom_update_byte(&eeSavedData.eeMaxSpeedCount, maxSpeedCount);
     eeprom_update_byte(&eeSavedData.eeAverageSpeedCount, avgSpeedCount);
-    eeprom_update_dword(&eeSavedData.eeAvgSpeedDivider, avgSpeedDivider);
+    eeprom_update_float(&eeSavedData.eeAvgSpeedDivider, avgSpeedDivider);
 
     eeprom_update_word(&eeSavedData.eeSaveNumber, saveNumber);
 
@@ -312,7 +312,7 @@ void loadData() {
 
     maxSpeedCount = isnan(eeprom_read_byte(&eeSavedData.eeMaxSpeedCount)) ? 0 : eeprom_read_byte(&eeSavedData.eeMaxSpeedCount);
     avgSpeedCount = isnan(eeprom_read_byte(&eeSavedData.eeAverageSpeedCount)) ? 0 : eeprom_read_byte(&eeSavedData.eeAverageSpeedCount);
-    avgSpeedDivider = isnan(eeprom_read_dword(&eeSavedData.eeAvgSpeedDivider)) ? 0 : eeprom_read_dword(&eeSavedData.eeAvgSpeedDivider);
+    avgSpeedDivider = isnan(eeprom_read_float(&eeSavedData.eeAvgSpeedDivider)) ? 0 : eeprom_read_float(&eeSavedData.eeAvgSpeedDivider);
 
     saveNumber = isnan(eeprom_read_word(&eeSavedData.eeSaveNumber)) ? 0 : eeprom_read_word(&eeSavedData.eeSaveNumber);
 }

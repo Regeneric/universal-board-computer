@@ -30,10 +30,10 @@ typedef struct {
     float eeAverageFuelConsumption;
     float eeTraveledDistance;
     float eeUsedFuel;
+    float eeAvgSpeedDivider;
     uint8_t eeAverageSpeedCount;
     uint8_t eeMaxSpeedCount;
     uint16_t eeSaveNumber;  
-    uint32_t eeAvgSpeedDivider;
 } eeStruct;
 eeStruct EEMEM eeSavedData;
 

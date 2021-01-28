@@ -52,9 +52,9 @@ void loadData();
 int main() {
     // VSS signal, injector signal and navigation buttons - Atmega 8
     DDRD &= ~0x8C;  // PD2/INT0, PD3/INT1 and PD7 as input
-    PORTD = 0x8C;  // PD2/INT0, PD3/INT1 and PD7 internal pull-up resistor
+    // PORTD = 0x8C;  // PD2/INT0, PD3/INT1 and PD7 internal pull-up resistor
 
-    MCUCR = 0x6;  // ANY change of state of INT1 generates interrupt  (1<<ISC10)
+    MCUCR = 0x6;  // FALLING edge of INT0 and ANY change of state of INT1 generates interrupt  (1<<ISC10)
     GICR = 0xC0;  // Turns on INT0 and INT1  ((1<<INT1) | (1<<INT0))
 
     // 16 bit timer for VSS
@@ -63,7 +63,7 @@ int main() {
     TCNT1 = 34286;  // Counts from 34286 to 65535 - causes overflow every 0.25s (8 MHz crystal, 3036 for 16 MHz)
 
     // Counter for millis() function
-    TCCR0 = 0x3;  // Prescaler 64, causes overflow every 0.262144s (8 MHz crystal)  ((1<<CS01) | (1<<CS00))
+    TCCR0 = 0x3;  // Prescaler 64 ((1<<CS01) | (1<<CS00))
     TCNT0 = 0;  // Counts from 0 to 255;
 
     // Enable timer overflow interrupt  ((1<<TOIE1) | (1<<TOIE0))
@@ -71,8 +71,8 @@ int main() {
 
 
     // Button debouncing 
-	uint8_t i = 0;              // counter variable
-	uint8_t buttonPressed = 0;  // keeps track if button is pressed, 0 false, 1 true
+	uint8_t i = 0;              // Counter variable
+	uint8_t buttonPressed = 0;  // Keeps track if button is pressed; 0 false, 1 true
 
     loadData();
     char buffer[8];
@@ -106,7 +106,7 @@ int main() {
                 else LCD.sends(res, 2);
 
                 LCD.cursor(54, 11);
-                if(speed > 3) LCD.sends("L/100", 1);
+                if(speed > 5) LCD.sends("L/100", 1);
                 else LCD.sends("L/H", 1);
 
                 LCD.cursor(6, 30);
@@ -255,7 +255,10 @@ void maxSpeed() {
 }
 
 void avgSpeed() {
-    // Harmonic 
+    // Harmonic mean
+    // Thanks to Gabryś "Dragroth" Król we've got now really good solution for average speed and fuel calculations.
+    // His disappointment, when he saw my miserable arithmetic mean, was immeasurable and his day was ruined.
+    // He took matters into his own hands and after few tests he came up with the solution you can see in here.
     sumInv += 1.0f/speed;
     avgSpeedCount = avgSpeedDivider/sumInv;
 }
@@ -270,7 +273,7 @@ void fuelConsumption() {
     if(speed > 5) {
         instantFuelConsumption = (100 * ((injectorOpenTime * INJECTION_VALUE) * 3600 * 4))/speed;
 
-        // Harmonic 
+        // Harmonic mean 
         if(instantFuelConsumption > 0) {
             fuelSumInv += 1.0f/instantFuelConsumption;
             averageFuelConsumption = avgSpeedDivider/fuelSumInv;
@@ -311,7 +314,9 @@ void loadData() {
     usedFuel = isnan(eeprom_read_float(&eeSavedData.eeUsedFuel)) ? 0 : eeprom_read_float(&eeSavedData.eeUsedFuel);
 
     maxSpeedCount = isnan(eeprom_read_byte(&eeSavedData.eeMaxSpeedCount)) ? 0 : eeprom_read_byte(&eeSavedData.eeMaxSpeedCount);
-    avgSpeedCount = isnan(eeprom_read_byte(&eeSavedData.eeAverageSpeedCount)) ? 0 : eeprom_read_byte(&eeSavedData.eeAverageSpeedCount);
+    avgSpeedCount = isnan(eeprom_read_byte(&eeSavedData.eeAverageSpeedCount)) 
+                        ? 0 : (eeprom_read_byte(&eeSavedData.eeAverageSpeedCount) >= 255 
+                            ? 0 : eeprom_read_byte(&eeSavedData.eeAverageSpeedCount));
     avgSpeedDivider = isnan(eeprom_read_float(&eeSavedData.eeAvgSpeedDivider)) ? 0 : eeprom_read_float(&eeSavedData.eeAvgSpeedDivider);
 
     saveNumber = isnan(eeprom_read_word(&eeSavedData.eeSaveNumber)) ? 0 : eeprom_read_word(&eeSavedData.eeSaveNumber);

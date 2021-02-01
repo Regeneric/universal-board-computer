@@ -21,9 +21,6 @@ lcd.o: ./lcd.c ./lcd.h
 ftoa.o: ./ftoa.c ./ftoa.h
 	$(CC) $(CFLAGS) -c -o ./build/ftoa.o ./ftoa.c
 
-eeprom.o: ./eeprom.c ./eeprom.h
-	$(CC) $(CFLAGS) -c -o ./build/eeprom.o ./eeprom.c
-
 millis.o: ./millis.c ./millis.h
 	$(CC) $(CFLAGS) -c -o ./build/millis.o ./millis.c
 

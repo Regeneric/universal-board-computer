@@ -1,3 +1,23 @@
+//  ​Universal Board Computer for cars with electronic MPI
+//  Copyright © 2021 IT Crowd, Hubert "hkk" Batkiewicz
+// 
+//  This file is part of UBC.
+//  UBC is free software: you can redistribute it and/or modify
+//  ​it under the terms of the GNU Affero General Public License as
+//  published by the Free Software Foundation, either version 3 of the
+//  ​License, or (at your option) any later version.
+// 
+//  ​This program is distributed in the hope that it will be useful,
+//  ​but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  ​MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. 
+//  See the ​GNU Affero General Public License for more details.
+// 
+//  ​You should have received a copy of the GNU Affero General Public License
+//  ​along with this program.  If not, see <https://www.gnu.org/licenses/>
+
+// <https://itcrowd.net.pl/> 
+
+
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <avr/pgmspace.h>
@@ -13,15 +33,19 @@
 #include "millis.h"
 
 
-volatile static const float PULSE_DISTANCE = 0.00006823;
-volatile static const float INJECTION_VALUE = 0.0031667;
 
-volatile float traveledDistance = .0, displayedTraveledDistance = .0, injectorOpenTime = .0, usedFuel = .0, tankCapacity = 68, instantFuelConsumption = .0, displayInstantFuelConsumption = .0;
-volatile float averageFuelConsumption = .0, fuelSumInv = .0;
-volatile uint8_t toBeSaved = 0, mode = 1;
-volatile uint8_t speed = 0, displaySpeed = 0, avgSpeedCount = 0, maxSpeedCount = 0, fcCounter = 0, saveCounter = 0, i = 0;
-volatile uint16_t counter = 0, distPulseCount = 0, tempDistPulseCount = 0, injectorPulseTime = 0, injTimeHigh = 0, injTimeLow = 0, tempInjectorPulseTime = 0, saveNumber = 0;
-volatile float avgSpeedDivider = .0, sumInv = .0;
+volatile static const float PULSE_DISTANCE = 0.00006823;  // distance in kilometers/all pulses
+volatile static const float INJECTION_VALUE = 0.0031667;  // Based on value that injector can inject 191.3 cc/min of fuel
+
+
+volatile float avgSpeedDivider = .0, traveledDistance = .0, sumInv = .0;
+volatile float instantFuelConsumption = .0, averageFuelConsumption = .0, usedFuel = .0, fuelSumInv = .0;
+volatile float injectorOpenTime = .0;
+
+volatile uint8_t toBeSaved = 0, mode = 1, fcCounter = 0, saveCounter = 0;
+volatile uint8_t speed = 0, avgSpeedCount = 0, maxSpeedCount = 0, tankCapacity = 68;
+
+volatile uint16_t counter = 0, distPulseCount = 0, injectorPulseTime = 0, injTimeHigh = 0, injTimeLow = 0, saveNumber = 0;
 
 
 
@@ -34,12 +58,11 @@ typedef struct {
     uint8_t eeAverageSpeedCount;
     uint8_t eeMaxSpeedCount;
     uint16_t eeSaveNumber;  
-} eeStruct;
-eeStruct EEMEM eeSavedData;
+} eeStruct; eeStruct EEMEM eeSavedData;
 
 
 
-void maxSpeed();
+void maxSpeed();  // To be removed
 void avgSpeed();
 void currentSpeed();
 
@@ -50,35 +73,36 @@ void loadData();
 
 
 int main() {
+    // I use hex values 'cause they take less space in the output file. 
+
     // VSS signal, injector signal and navigation buttons - Atmega 8
     DDRD &= ~0x8C;  // PD2/INT0, PD3/INT1 and PD7 as input
-    // PORTD = 0x8C;  // PD2/INT0, PD3/INT1 and PD7 internal pull-up resistor
+    PORTD = 0x8C;  // PD2/INT0, PD3/INT1 and PD7 internal pull-up resistor to avoid high impedance state of the pin
 
     MCUCR = 0x6;  // FALLING edge of INT0 and ANY change of state of INT1 generates interrupt  (1<<ISC10)
     GICR = 0xC0;  // Turns on INT0 and INT1  ((1<<INT1) | (1<<INT0))
 
     // 16 bit timer for VSS
     TCCR1A = 0;  // Timer1 normal mode
-    TCCR1B = 0x3;  // Prescaler 64, causes overflow every 0.262144s (8 MHz crystal)  ((1<<CS10) | (1<<CS11))
+    TCCR1B = 0x3;  // Prescaler 64, causes overflow every 0.524288s (8 MHz crystal, 0.262144s for 16 MHz)  ((1<<CS10) | (1<<CS11))
     TCNT1 = 34286;  // Counts from 34286 to 65535 - causes overflow every 0.25s (8 MHz crystal, 3036 for 16 MHz)
 
     // Counter for millis() function
     TCCR0 = 0x3;  // Prescaler 64 ((1<<CS01) | (1<<CS00))
     TCNT0 = 0;  // Counts from 0 to 255;
 
-    // Enable timer overflow interrupt  ((1<<TOIE1) | (1<<TOIE0))
-    TIMSK = 0x5;
+    TIMSK = 0x5;  // Enable timer overflow interrupt  ((1<<TOIE1) | (1<<TOIE0))
 
 
     // Button debouncing 
-	uint8_t i = 0;              // Counter variable
+	uint8_t i = 0;  // Counter variable
 	uint8_t buttonPressed = 0;  // Keeps track if button is pressed; 0 false, 1 true
 
-    loadData();
-    char buffer[8];
+    loadData();  // Loads data from EEPROM
+    char buffer[8];  // Buffer for itoa() function
     LCD.init();
 
-    sei();
+    sei();  // Global interrupts enabled
     while(1) {
         if(!(PIND & (1<<PD7)) && !buttonPressed) {
             if(i < 15) i++;
@@ -88,7 +112,7 @@ int main() {
             buttonPressed = 1;
 
             mode++;
-            if(mode > 6) mode = 1;
+            if(mode > 6) mode = 1;  // "Modes" of what should be displayed on the LCD
         } else if((PIND & (1<<PD7)) && buttonPressed) {
             buttonPressed = 0;
             PORTD ^= (1<<PD7);
@@ -99,15 +123,15 @@ int main() {
         switch(mode) {
             case 1: 
             // Instant fuel consumption
-                FTOA.convert(displayInstantFuelConsumption, res, 1);
+                FTOA.convert(instantFuelConsumption, res, 1);
 
                 LCD.cursor(1, 7);
-                if(displayInstantFuelConsumption > 99 || displayInstantFuelConsumption <= 0) LCD.sends("--.-", 2);
+                if(instantFuelConsumption > 99 || instantFuelConsumption <= 0) LCD.sends("--.-", 2);
                 else LCD.sends(res, 2);
 
                 LCD.cursor(54, 11);
-                if(speed > 5) LCD.sends("L/100", 1);
-                else LCD.sends("L/H", 1);
+                if(speed > 5) LCD.sends("L/100", 1);  // Cars is moving
+                else LCD.sends("L/H", 1);  // Cars is not moving
 
                 LCD.cursor(6, 30);
                 LCD.sends("INSTANT FUEL", 1);
@@ -132,12 +156,12 @@ int main() {
 
             case 3: 
             // Current speed
-                FTOA.convert(displaySpeed, res, 2);
+                FTOA.convert(speed, res, 2);
 
                 LCD.cursor(6, 7); 
-                if(displaySpeed <= 0) LCD.sends("--", 2);
-                else if(displaySpeed < 1 && displaySpeed > 0) {LCD.sends("0", 2); LCD.sends(itoa(displaySpeed, buffer, 10), 2);}
-                else LCD.sends(itoa(displaySpeed, buffer, 10), 2);
+                if(speed <= 0) LCD.sends("--", 2);
+                else if(speed < 1 && speed > 0) {LCD.sends("0", 2); LCD.sends(itoa(speed, buffer, 10), 2);}
+                else LCD.sends(itoa(speed, buffer, 10), 2);
                 LCD.cursor(54, 11); LCD.sends("KM/H", 1);
 
                 LCD.cursor(4, 30);
@@ -171,10 +195,10 @@ int main() {
 
             case 6:
             // Traveled distance
-                FTOA.convert(displayedTraveledDistance, res, 2);
+                FTOA.convert(traveledDistance, res, 2);
 
                 LCD.cursor(1, 7); 
-                if(displayedTraveledDistance <= 0) LCD.sends("--", 2);
+                if(traveledDistance <= 0) LCD.sends("--", 2);
                 else LCD.sends(res, 2);
                 LCD.cursor(72, 11); LCD.sends("KM", 1);
 
@@ -184,6 +208,7 @@ int main() {
                 LCD.sends("DISTANCE", 1);
             break;
 
+            // `switch()` without `default` case is taking more space in output file. Huh, interesting.
             default: 
                 LCD.cursor(1, 1); LCD.sends("MODE NOT SET", 1);
                 LCD.cursor(1, 9); LCD.sends("MODE: ", 1); LCD.sends(itoa(mode, buffer, 10), 1);
@@ -200,11 +225,8 @@ int main() {
 ISR(TIMER1_OVF_vect) {
     counter++;
 
-    if(tempInjectorPulseTime < 800 && tempDistPulseCount == 0 && toBeSaved == 1) saveData();
+    if(injectorPulseTime < 800 && distPulseCount == 0 && toBeSaved == 1) saveData();
     if(saveCounter > 45 && speed == 0 && toBeSaved == 1) saveData();
-
-    tempInjectorPulseTime = 0;
-    tempDistPulseCount = 0;
 
     if(counter > 3) {
         currentSpeed();
@@ -221,10 +243,6 @@ ISR(TIMER1_OVF_vect) {
         distPulseCount = 0;
         injectorPulseTime = 0;
         counter = 0;
-
-        displayInstantFuelConsumption = instantFuelConsumption;
-        displayedTraveledDistance = traveledDistance;
-        displaySpeed = speed;
     } TCNT1 = 34286;
 }
 
@@ -233,7 +251,6 @@ ISR(TIMER1_OVF_vect) {
 ISR(INT0_vect) {
     distPulseCount++;
     traveledDistance += PULSE_DISTANCE;
-    tempDistPulseCount++;
 }
 
 // Injector signal interrupt 
@@ -243,17 +260,13 @@ ISR(INT1_vect) {
         // High state on PD3
         injTimeHigh = millis();
         injectorPulseTime = injectorPulseTime + (injTimeHigh - injTimeLow);
-        tempInjectorPulseTime = tempInjectorPulseTime + (injTimeHigh - injTimeLow);
         PORTD |= (1<<PD3);
     }
 }
 
 
 
-void maxSpeed() {
-    if(speed > maxSpeedCount) maxSpeedCount = speed;
-}
-
+void maxSpeed() {if(speed > maxSpeedCount) maxSpeedCount = speed;}  // To be removed, I've never used that feature
 void avgSpeed() {
     // Harmonic mean
     // Thanks to Gabryś "Dragroth" Król we've got now really good solution for average speed and fuel calculations.
@@ -262,16 +275,13 @@ void avgSpeed() {
     sumInv += 1.0f/speed;
     avgSpeedCount = avgSpeedDivider/sumInv;
 }
-
-void currentSpeed() {
-    speed = PULSE_DISTANCE * distPulseCount * 3600;
-}
+void currentSpeed() {speed = PULSE_DISTANCE * distPulseCount * 3600;}
 
 
 void fuelConsumption() {
     injectorOpenTime = ((float)injectorPulseTime/1000);  // Converting to seconds
     if(speed > 5) {
-        instantFuelConsumption = (100 * ((injectorOpenTime * INJECTION_VALUE) * 3600 * 4))/speed;
+        instantFuelConsumption = (100*(injectorOpenTime*INJECTION_VALUE)*3600*4)/speed;
 
         // Harmonic mean 
         if(instantFuelConsumption > 0) {
@@ -279,10 +289,10 @@ void fuelConsumption() {
             averageFuelConsumption = avgSpeedDivider/fuelSumInv;
         }
 
-    } else instantFuelConsumption = ((injectorOpenTime * INJECTION_VALUE) * 3600 * 4);
+    } else instantFuelConsumption = (injectorOpenTime*INJECTION_VALUE)*3600*4;
     
     usedFuel += ((injectorOpenTime * INJECTION_VALUE) * 4);
-    if(tankCapacity > 0) tankCapacity = 68 - usedFuel;
+    if(tankCapacity > 0) tankCapacity = 68 - usedFuel;  // Obviously it's not a final version of that utility, to be reworked
 }
 
 

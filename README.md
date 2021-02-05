@@ -1,4 +1,6 @@
 ## Getting started
+More about project (in Polish): https://itcrowd.net.pl/devblog-1-czym-jest-ubc-jak-dziala-i-plany-na-rozwoj/
+
 Known issue is that `avr-gcc` for Windows doesn't recognize the `-Os` flag so it won't compile due to large output file size. 
 
 I won't try to make it work in the future, Windows doesn't concern me at all. But if someone has an idea, what should we do with that fact - go ahead.

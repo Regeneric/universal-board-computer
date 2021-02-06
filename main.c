@@ -52,14 +52,14 @@ void loadData();
 int main() {
     // VSS signal, injector signal and navigation buttons - Atmega 8
     DDRD &= ~0x8C;  // PD2/INT0, PD3/INT1 and PD7 as input
-    // PORTD = 0x8C;  // PD2/INT0, PD3/INT1 and PD7 internal pull-up resistor
+    PORTD = 0x8C;  // PD2/INT0, PD3/INT1 and PD7 internal pull-up resistor
 
     MCUCR = 0x6;  // FALLING edge of INT0 and ANY change of state of INT1 generates interrupt  (1<<ISC10)
     GICR = 0xC0;  // Turns on INT0 and INT1  ((1<<INT1) | (1<<INT0))
 
     // 16 bit timer for VSS
     TCCR1A = 0;  // Timer1 normal mode
-    TCCR1B = 0x3;  // Prescaler 64, causes overflow every 0.262144s (8 MHz crystal)  ((1<<CS10) | (1<<CS11))
+    TCCR1B = 0x3;  // Prescaler 64, causes overflow every 0.524288s (8 MHz crystal, 0.262144s for 16 MHz)  ((1<<CS10) | (1<<CS11))
     TCNT1 = 34286;  // Counts from 34286 to 65535 - causes overflow every 0.25s (8 MHz crystal, 3036 for 16 MHz)
 
     // Counter for millis() function

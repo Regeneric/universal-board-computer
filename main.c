@@ -71,6 +71,9 @@ void loadData();
 
 int main() {
     // I use hex values 'cause they take less space in the output file. 
+    // For now, (07.02.2021, commit on GH no. f8415bd, as I write this) there are 224 bytes of free space in flash memory.
+    // Yes, bytes. And still there is no built-in calibration method. 
+
 
     // ADC for checking fuel level
     DDRC &= ~0x32;  // PC5/ADC as input
@@ -141,8 +144,8 @@ int main() {
                 else LCD.sends(res, 2);
 
                 LCD.cursor(54, 22);
-                if(speed > 5) LCD.sends("L/100", 1);  // Cars is moving
-                else LCD.sends("L/H", 1);  // Cars is not moving
+                if(speed > 5) LCD.sends("L/100", 1);  // Car is moving
+                else LCD.sends("L/H", 1);  // Car is not moving
 
                 // Average fuel consumption
                 LCD.cursor(1, 32); LCD.sends("--------------", 1);
@@ -188,7 +191,6 @@ int main() {
                 FTOA.convert(traveledDistance, res, 1);   
                 LCD.cursor(1, 17);
                 if(traveledDistance <= 0) LCD.sends("--", 2);
-                // else if(traveledDistance > 0 &&  traveledDistance < 1) {LCD.sends("324.5", 2);}
                 else if(traveledDistance > 0 && traveledDistance < 1) {LCD.sendc('0', 2); LCD.sends(res, 2);}
                 else LCD.sends(res, 2);
                 LCD.cursor(70, 22); LCD.sends("KM", 1);
@@ -282,10 +284,9 @@ void fuelConsumption() {
         }
 
     } else instantFuelConsumption = (injectorOpenTime*INJECTION_VALUE)*3600*4;
-    
     usedFuel += ((injectorOpenTime * INJECTION_VALUE) * 4);
-    // if(tankCapacity > 0) tankCapacity = 68 - usedFuel;  // Obviously it's not a final version of that utility, to be reworked
 
+    // ADC checks for level fuel in the tank
     ADCSRA |= (1<<ADSC);
     while(ADCSRA & (1<<ADSC));
 

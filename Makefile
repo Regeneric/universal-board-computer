@@ -3,7 +3,7 @@ PROGM = usbasp
 PROGM_UC = m8
 
 CC = avr-gcc
-CFLAGS = -Os -DF_CPU=8000000UL -mmcu=$(TARGET)
+CFLAGS = -fshort-enums -Os -DF_CPU=8000000UL -mmcu=$(TARGET)
 
 all: main.o lcd.o ftoa.o millis.o app ./build/app.bin
 	avr-objcopy -O ihex -R .eeprom ./build/app.bin ./rel/app.hex

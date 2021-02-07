@@ -38,11 +38,11 @@ static const float INJECTION_VALUE = 0.0031667;  // Based on value that injector
 
 
 volatile static float avgSpeedDivider = .0, traveledDistance = .0, sumInv = .0;
-volatile static float instantFuelConsumption = .0, averageFuelConsumption = .0, usedFuel = .0, fuelSumInv = .0;
+volatile static float instantFuelConsumption = .0, averageFuelConsumption = .0, usedFuel = .0, fuelLeft = 0, fuelSumInv = .0;
 volatile static float injectorOpenTime = .0;
 
 volatile static uint8_t toBeSaved = 0, saveCounter = 0, btnCnt = 0, calibrationFlag = 0, pulseOverflows = 0;
-volatile static uint8_t speed = 0, avgSpeedCount = 0, fuelLeft = 0;
+volatile static uint8_t speed = 0, avgSpeedCount = 0;
 
 volatile static uint16_t counter = 0, distPulseCount = 0, injectorPulseTime = 0, injTimeHigh = 0, injTimeLow = 0, saveNumber = 0, rangeDistance = 0;
 
@@ -124,6 +124,14 @@ int main() {
             PORTD ^= (1<<PD7);
         }
         
+
+        if(fuelLeft <= 0) {
+            // ADC checks for level fuel in the tank
+            ADCSRA |= (1<<ADSC);
+            while(ADCSRA & (1<<ADSC));
+            fuelLeft = ADC/15.0f;  // For the 68 liters tank
+        }
+
         
         if(!calibrationFlag) {
             switch(mode) {
@@ -195,16 +203,17 @@ int main() {
                     LCD.cursor(70, 22); LCD.sends("KM", 1);
 
                     // // Left fuel
+                    ftoa(fuelLeft, res, 0); 
                     LCD.cursor(1, 32); LCD.sends("--------------", 1);
                     LCD.cursor(5, 40); LCD.sends("!\"   ", 1);  // Fuel distributor symbol
-                    LCD.sends(itoa(fuelLeft, buffer, 10), 1); 
+                    LCD.sends(res, 1); 
                     LCD.cursor(70, 40); LCD.sends("L", 1);
 
                 break;
 
                 // `switch()` without `default` case is taking more space in output file. Huh, interesting.
                 default: 
-                    LCD.cursor(1, 1); LCD.sends("MODE NOT SET - ", 1); 
+                    LCD.cursor(1, 1); LCD.sends("L//1337 - ", 1); 
                     LCD.sends(itoa(mode, buffer, 10), 1);
                 break;
             }
@@ -219,8 +228,8 @@ int main() {
                           ff = 10/ff; 
 
                     eeprom_update_float(&eeSavedData.eePulseDistance, ff);  // Calibration data is stored in EEPROM
-                    LCD.sends("RESTART DEVICE", 1);
-                    // LCD.cursor(1, 9);
+                    LCD.sends("L//2137", 1);
+                    LCD.cursor(0, 9);
                     ftoa(ff, res, 8);
                     LCD.sends(res, 1);
                 break;
@@ -306,23 +315,22 @@ void currentSpeed() {speed = PULSE_DISTANCE * distPulseCount * 3600;}
 
 
 void fuelConsumption() {
+    float iotv = (injectorOpenTime*INJECTION_VALUE)*14400;  // 14400 because 3600 (seconds in hour) * 4 (no. of injectors)
+    float inv = (injectorOpenTime * INJECTION_VALUE)*4;
+
     injectorOpenTime = ((float)injectorPulseTime/1000);  // Converting to seconds
     if(speed > 5) {
-        instantFuelConsumption = (100*(injectorOpenTime*INJECTION_VALUE)*3600*4)/speed;
+        instantFuelConsumption = (100*iotv)/speed;
 
         // Harmonic mean 
         if(instantFuelConsumption > 0 && instantFuelConsumption < 100) {
             fuelSumInv += 1.0f/instantFuelConsumption;
             averageFuelConsumption = avgSpeedDivider/fuelSumInv;
         }
-    } else instantFuelConsumption = (injectorOpenTime*INJECTION_VALUE)*3600*4;
-    usedFuel += ((injectorOpenTime * INJECTION_VALUE) * 4);
+    } else instantFuelConsumption = iotv;
 
-    // ADC checks for level fuel in the tank
-    ADCSRA |= (1<<ADSC);
-    while(ADCSRA & (1<<ADSC));
-
-    fuelLeft = ADC/15;  // For the 68 liters tank
+    usedFuel += inv;
+    fuelLeft -= inv;
 }
 
 

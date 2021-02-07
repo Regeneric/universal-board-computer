@@ -33,20 +33,18 @@
 #include "millis.h"
 
 
+static float PULSE_DISTANCE = .0;  // 0.00006823
+static const float INJECTION_VALUE = 0.0031667;  // Based on value that injector can inject 191.3 cc/min of fuel
 
-volatile static const float PULSE_DISTANCE = 0.00006823;  // distance in kilometers/all pulses
-volatile static const float INJECTION_VALUE = 0.0031667;  // Based on value that injector can inject 191.3 cc/min of fuel
 
+volatile static float avgSpeedDivider = .0, traveledDistance = .0, sumInv = .0;
+volatile static float instantFuelConsumption = .0, averageFuelConsumption = .0, usedFuel = .0, fuelSumInv = .0;
+volatile static float injectorOpenTime = .0;
 
-volatile float avgSpeedDivider = .0, traveledDistance = .0, sumInv = .0;
-volatile float instantFuelConsumption = .0, averageFuelConsumption = .0, usedFuel = .0, fuelSumInv = .0;
-volatile float injectorOpenTime = .0;
+volatile static uint8_t toBeSaved = 0, saveCounter = 0, btnCnt = 0, calibrationFlag = 0, pulseOverflows = 0;
+volatile static uint8_t speed = 0, avgSpeedCount = 0, fuelLeft = 0;
 
-volatile uint8_t toBeSaved = 0, mode = 1, saveCounter = 0;
-volatile uint8_t speed = 0, avgSpeedCount = 0, fuelLeft = 0;
-
-volatile uint16_t counter = 0, distPulseCount = 0, injectorPulseTime = 0, injTimeHigh = 0, injTimeLow = 0, saveNumber = 0, rangeDistance = 0;
-
+volatile static uint16_t counter = 0, distPulseCount = 0, injectorPulseTime = 0, injTimeHigh = 0, injTimeLow = 0, saveNumber = 0, rangeDistance = 0;
 
 
 // Structure stored in EEPROM
@@ -55,23 +53,23 @@ typedef struct {
     float eeTraveledDistance;
     float eeUsedFuel;
     float eeAvgSpeedDivider;
+    float eePulseDistance;
     uint8_t eeAverageSpeedCount;  
 } eeStruct; eeStruct EEMEM eeSavedData;
 
 
+static void avgSpeed();
+static void currentSpeed();
 
-void avgSpeed();
-void currentSpeed();
+static void fuelConsumption();
 
-void fuelConsumption();
-
-void saveData();
-void loadData();
+static void saveData();
+static void loadData();
 
 
 int main() {
     // I use hex values 'cause they take less space in the output file. 
-    // For now, (07.02.2021, commit on GH no. f8415bd, as I write this) there are 224 bytes of free space in flash memory.
+    // For now, (07.02.2021, commit on GH no. 6adcdef, as I write this) there are 224 bytes of free space in flash memory.
     // Yes, bytes. And still there is no built-in calibration method. 
 
 
@@ -88,6 +86,7 @@ int main() {
 
     MCUCR = 0x6;  // FALLING edge of INT0 and ANY change of state of INT1 generates interrupt  (1<<ISC10)
     GICR = 0xC0;  // Turns on INT0 and INT1  ((1<<INT1) | (1<<INT0))
+    
 
     // 16 bit timer for VSS
     TCCR1A = 0;  // Timer1 normal mode
@@ -101,113 +100,139 @@ int main() {
     TIMSK = 0x5;  // Enable timer overflow interrupt  ((1<<TOIE1) | (1<<TOIE0))
 
 
-    // Button debouncing 
-	uint8_t i = 0;  // Counter variable
+    // Button debouncing, mode change 
+	uint8_t i = 15, mode = 3;  // Counter and mode iterators
 	uint8_t buttonPressed = 0;  // Keeps track if button is pressed; 0 false, 1 true
 
     loadData();  // Loads data from EEPROM
-    char buffer[8];  // Buffer for itoa() function
+    char buffer[8], res[8];  // Buffer for itoa() function
     LCD.init();
 
     sei();  // Global interrupts enabled
     while(1) {
         if(!(PIND & (1<<PD7)) && !buttonPressed) {
-            if(i < 15) i++;
-            else i = 0;
+            while(i != 0) --i;
+            i = 15;
 
             PORTD = i | (1<<PD7);
             buttonPressed = 1;
 
-            mode++;
-            if(mode > 3) mode = 1;  // "Modes" of what should be displayed on the LCD
+            --mode;
+            if(mode < 1) mode = 3;  // "Modes" of what should be displayed on the LCD
         } else if((PIND & (1<<PD7)) && buttonPressed) {
             buttonPressed = 0;
             PORTD ^= (1<<PD7);
         }
         
+        
+        if(!calibrationFlag) {
+            switch(mode) {
+                case 3: 
+                // Main Screen
+                    
+                    // Range
+                    LCD.cursor(1, 1); LCD.sends("$%&  ", 1);  // Range symbol
+                    LCD.sends(itoa(rangeDistance, buffer, 10), 1);
+                    LCD.cursor(65, 1); LCD.sends(" KM", 1);
+                    LCD.cursor(1, 9); LCD.sends("--------------", 1);
+                    
+                    // Instant fuel consumption
+                    ftoa(instantFuelConsumption, res, 1);   
+                    LCD.cursor(1, 17);
+                    if(instantFuelConsumption > 99 || instantFuelConsumption <= 0) LCD.sends("--.-", 2);
+                    else LCD.sends(res, 2);
 
-        char res[24];
-        switch(mode) {
-            case 1: 
-            // Main Screen
-                
-                // Range
-                LCD.cursor(1, 1); LCD.sends("$%&  ", 1);  // Range symbol
-                LCD.sends(itoa(rangeDistance, buffer, 10), 1);
-                LCD.cursor(65, 1); LCD.sends(" KM", 1);
-                LCD.cursor(1, 9); LCD.sends("--------------", 1);
-                
-                // Instant fuel consumption
-                FTOA.convert(instantFuelConsumption, res, 1);   
-                LCD.cursor(1, 17);
-                if(instantFuelConsumption > 99 || instantFuelConsumption <= 0) LCD.sends("--.-", 2);
-                else LCD.sends(res, 2);
+                    LCD.cursor(54, 22);
+                    if(speed > 5) LCD.sends("L/100", 1);  // Car is moving
+                    else LCD.sends("L/H", 1);  // Car is not moving
 
-                LCD.cursor(54, 22);
-                if(speed > 5) LCD.sends("L/100", 1);  // Car is moving
-                else LCD.sends("L/H", 1);  // Car is not moving
+                    // Average fuel consumption
+                    LCD.cursor(1, 32); LCD.sends("--------------", 1);
+                    LCD.cursor(5, 40); LCD.sends("#  ", 1);  // Average fuel consumption symbol
+                    ftoa(averageFuelConsumption, res, 1);
+                    LCD.sends(res, 1); 
+                    LCD.cursor(54, 40); LCD.sends("L/100", 1);
+                break;
 
-                // Average fuel consumption
-                LCD.cursor(1, 32); LCD.sends("--------------", 1);
-                LCD.cursor(5, 40); LCD.sends("#  ", 1);  // Average fuel consumption symbol
-                FTOA.convert(averageFuelConsumption, res, 1);
-                LCD.sends(res, 1); 
-                LCD.cursor(54, 40); LCD.sends("L/100", 1);
-            break;
+                case 2: 
+                // Speed infoscreen
+                    ftoa(speed, res, 2);
 
-            case 2: 
-            // Speed infoscreen
-                FTOA.convert(speed, res, 2);
+                    // Current speed  
+                    LCD.cursor(6, 7); 
+                    if(speed <= 0) LCD.sends("--", 2);
+                    else if(speed < 1 && speed > 0) {LCD.sends("0", 2); LCD.sends(itoa(speed, buffer, 10), 2);}
+                    else LCD.sends(itoa(speed, buffer, 10), 2);
+                    LCD.cursor(56, 11); LCD.sends("KM/H", 1);
 
-                // Current speed  
-                LCD.cursor(6, 7); 
-                if(speed <= 0) LCD.sends("--", 2);
-                else if(speed < 1 && speed > 0) {LCD.sends("0", 2); LCD.sends(itoa(speed, buffer, 10), 2);}
-                else LCD.sends(itoa(speed, buffer, 10), 2);
-                LCD.cursor(56, 11); LCD.sends("KM/H", 1);
-
-                // Average speed
-                LCD.cursor(1, 32); LCD.sends("--------------", 1);
-                LCD.cursor(5, 40); LCD.sends("#  ", 1);  // Average speed symbol
-                if(avgSpeedCount <= 0) LCD.sends("--", 1);
-                else LCD.sends(itoa(avgSpeedCount, buffer, 10), 1);
-                LCD.cursor(56, 40); LCD.sends("KM/H", 1);
-            break;
+                    // Average speed
+                    LCD.cursor(1, 32); LCD.sends("--------------", 1);
+                    LCD.cursor(5, 40); LCD.sends("#  ", 1);  // Average speed symbol
+                    if(avgSpeedCount <= 0) LCD.sends("--", 1);
+                    else LCD.sends(itoa(avgSpeedCount, buffer, 10), 1);
+                    LCD.cursor(56, 40); LCD.sends("KM/H", 1);
+                break;
 
 
-            case 3:
-            // Fuel infoscreen
+                case 1:
+                // Fuel infoscreen
 
-                // Used fuel
-                FTOA.convert(usedFuel, res, 2);
-                LCD.cursor(1, 1); LCD.sends("%&$  ", 1);  // Range symbol
-                if(usedFuel <= 0) LCD.sends("--.-", 1);
-                else if(usedFuel < 1 && usedFuel > 0) {LCD.sends("0", 1); LCD.sends(res, 1);}
-                else LCD.sends(res, 1);
-                LCD.cursor(65, 1); LCD.sends(" L", 1);
-                LCD.cursor(1, 9); LCD.sends("--------------", 1);
-                
-                // Traveled distance
-                FTOA.convert(traveledDistance, res, 1);   
-                LCD.cursor(1, 17);
-                if(traveledDistance <= 0) LCD.sends("--", 2);
-                else if(traveledDistance > 0 && traveledDistance < 1) {LCD.sendc('0', 2); LCD.sends(res, 2);}
-                else LCD.sends(res, 2);
-                LCD.cursor(70, 22); LCD.sends("KM", 1);
+                    // Used fuel
+                    ftoa(usedFuel, res, 2);
+                    LCD.cursor(1, 1); LCD.sends("%&$  ", 1);  // Range symbol
+                    if(usedFuel <= 0) LCD.sends("--.-", 1);
+                    else if(usedFuel < 1 && usedFuel > 0) {LCD.sends("0", 1); LCD.sends(res, 1);}
+                    else LCD.sends(res, 1);
+                    LCD.cursor(65, 1); LCD.sends(" L", 1);
+                    LCD.cursor(1, 9); LCD.sends("--------------", 1);
+                    
+                    // Traveled distance
+                    ftoa(traveledDistance, res, 1);   
+                    LCD.cursor(1, 17);
+                    if(traveledDistance <= 0) LCD.sends("--", 2);
+                    else if(traveledDistance > 0 && traveledDistance < 1) {LCD.sendc('0', 2); LCD.sends(res, 2);}
+                    else LCD.sends(res, 2);
+                    LCD.cursor(70, 22); LCD.sends("KM", 1);
 
-                // // Left fuel
-                LCD.cursor(1, 32); LCD.sends("--------------", 1);
-                LCD.cursor(5, 40); LCD.sends("!\"   ", 1);  // Fuel distributor symbol
-                LCD.sends(itoa(fuelLeft, buffer, 10), 1); 
-                LCD.cursor(70, 40); LCD.sends("L", 1);
+                    // // Left fuel
+                    LCD.cursor(1, 32); LCD.sends("--------------", 1);
+                    LCD.cursor(5, 40); LCD.sends("!\"   ", 1);  // Fuel distributor symbol
+                    LCD.sends(itoa(fuelLeft, buffer, 10), 1); 
+                    LCD.cursor(70, 40); LCD.sends("L", 1);
 
-            break;
+                break;
 
-            // `switch()` without `default` case is taking more space in output file. Huh, interesting.
-            default: 
-                LCD.cursor(1, 1); LCD.sends("MODE NOT SET", 1);
-                LCD.cursor(1, 9); LCD.sends("MODE: ", 1); LCD.sends(itoa(mode, buffer, 10), 1);
-            break;
+                // `switch()` without `default` case is taking more space in output file. Huh, interesting.
+                default: 
+                    LCD.cursor(1, 1); LCD.sends("MODE NOT SET - ", 1); 
+                    LCD.sends(itoa(mode, buffer, 10), 1);
+                break;
+            }
+        } else {
+            switch(mode) {
+                case 3: 
+                    cli();  // Disable global interrupts to not corrupt the data
+
+                    // Simple formula - distance/pulses
+                    float ff = 65535*pulseOverflows;
+                          ff += distPulseCount;
+                          ff = 10/ff; 
+
+                    eeprom_update_float(&eeSavedData.eePulseDistance, ff);  // Calibration data is stored in EEPROM
+                    LCD.sends("RESTART DEVICE", 1);
+                    // LCD.cursor(1, 9);
+                    ftoa(ff, res, 8);
+                    LCD.sends(res, 1);
+                break;
+
+                case 2:
+                case 1: 
+                    sei();
+                    LCD.sends(ltoa(distPulseCount, buffer, 10), 1);
+                    LCD.cursor(0, 9);
+                    LCD.sends(itoa(pulseOverflows, buffer, 10), 1);
+                break;
+            }
         }
 
         LCD.render();
@@ -218,10 +243,16 @@ int main() {
 
 
 ISR(TIMER1_OVF_vect) {
-    counter++;
+    ++counter;
 
     if(injectorPulseTime < 800 && distPulseCount == 0 && toBeSaved == 1) saveData();
     if(saveCounter > 45 && speed == 0 && toBeSaved == 1) saveData();
+
+    // Check if button is pressed for ~3 seconds
+    if(!(PIND & (1<<PD7))) {
+        ++btnCnt;
+        if(btnCnt >= 12 && calibrationFlag == 0) calibrationFlag = 1;
+    } else btnCnt = 0;
 
     if(counter > 3) {
         currentSpeed();
@@ -230,12 +261,12 @@ ISR(TIMER1_OVF_vect) {
         if(instantFuelConsumption > 1.0) toBeSaved = 1;
         if(speed > 5) {
             rangeDistance = (fuelLeft/averageFuelConsumption)*100;
-            avgSpeedDivider++;
+            ++avgSpeedDivider;
             avgSpeed();
         }
         
-        saveCounter++;
-        distPulseCount = 0;
+        ++saveCounter;
+        if(!calibrationFlag) distPulseCount = 0;
         injectorPulseTime = 0;
         counter = 0;
     } TCNT1 = 34286;
@@ -244,7 +275,9 @@ ISR(TIMER1_OVF_vect) {
 
 // VSS signal interrupt
 ISR(INT0_vect) {
-    distPulseCount++;
+    ++distPulseCount;
+    if(calibrationFlag && distPulseCount == 65535) ++pulseOverflows;
+
     traveledDistance += PULSE_DISTANCE;
 }
 
@@ -282,7 +315,6 @@ void fuelConsumption() {
             fuelSumInv += 1.0f/instantFuelConsumption;
             averageFuelConsumption = avgSpeedDivider/fuelSumInv;
         }
-
     } else instantFuelConsumption = (injectorOpenTime*INJECTION_VALUE)*3600*4;
     usedFuel += ((injectorOpenTime * INJECTION_VALUE) * 4);
 
@@ -313,6 +345,8 @@ void saveData() {
 }
 
 void loadData() {
+    PULSE_DISTANCE = eeprom_read_float(&eeSavedData.eePulseDistance);
+
     traveledDistance = isnan(eeprom_read_float(&eeSavedData.eeTraveledDistance)) ? 0 : eeprom_read_float(&eeSavedData.eeTraveledDistance);
 
     averageFuelConsumption = isnan(eeprom_read_float(&eeSavedData.eeAverageFuelConsumption)) ? 0 : eeprom_read_float(&eeSavedData.eeAverageFuelConsumption);

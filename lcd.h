@@ -40,8 +40,8 @@
 struct lcdInterface {
     void (*init)(void);
     void (*clear)(void);
-    void (*power)(uint8_t on);
-    void (*setPixel)(uint8_t xPos, uint8_t yPos, uint8_t value);
+    // void (*power)(uint8_t on);
+    // void (*setPixel)(uint8_t xPos, uint8_t yPos, uint8_t value);
     void (*sendc)(char code, uint8_t scale);
     void (*sends)(const char* word, uint8_t scale);
     void (*cursor)(uint8_t xPos, uint8_t yPos);

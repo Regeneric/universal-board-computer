@@ -30,7 +30,23 @@
 
 #include "lcd.h"
 #include "ftoa.h"
-#include "millis.h"
+// #include "millis.h"
+
+
+
+#define clockCyclesToMicroseconds(a) (((a) * 1000L)/(F_CPU / 1000L))
+#define MICROSECONDS_PER_TIMER0_OVERFLOW (clockCyclesToMicroseconds(64 * 256))
+#define MILLIS_INC (MICROSECONDS_PER_TIMER0_OVERFLOW / 1000)
+#define FRACT_INC ((MICROSECONDS_PER_TIMER0_OVERFLOW % 1000)>>3)
+#define FRACT_MAX (1000>>3)
+
+volatile unsigned long int timer0_overflowCount = 0;
+volatile unsigned long int timer0_millis = 0;
+static unsigned char timer0_fract = 0;
+unsigned long int starttime = 0, endtime = 0;
+
+static unsigned long int millis();
+
 
 
 static float PULSE_DISTANCE = .0;  // 0.00006823
@@ -41,10 +57,10 @@ volatile static float avgSpeedDivider = .0, traveledDistance = .0, sumInv = .0;
 volatile static float instantFuelConsumption = .0, averageFuelConsumption = .0, usedFuel = .0, fuelLeft = 0, fuelSumInv = .0;
 volatile static float injectorOpenTime = .0;
 
-volatile static uint8_t toBeSaved = 0, saveCounter = 0, btnCnt = 0, calibrationFlag = 0, pulseOverflows = 0;
+volatile static uint8_t saveCounter = 60, btnCnt = 24, calibrationFlag = 0, pulseOverflows = 0;
 volatile static uint8_t speed = 0, avgSpeedCount = 0;
 
-volatile static uint16_t counter = 0, distPulseCount = 0, injectorPulseTime = 0, injTimeHigh = 0, injTimeLow = 0, saveNumber = 0, rangeDistance = 0;
+volatile static unsigned int counter = 4, distPulseCount = 0, injectorPulseTime = 0, injTimeHigh = 0, injTimeLow = 0, rangeDistance = 0;  // uint16_t
 
 
 // Structure stored in EEPROM
@@ -66,11 +82,11 @@ static void fuelConsumption();
 static void saveData();
 static void loadData();
 
-
 int main() {
     // I use hex values 'cause they take less space in the output file. 
     // For now, (07.02.2021, commit on GH no. 6adcdef, as I write this) there are 224 bytes of free space in flash memory.
     // Yes, bytes. And still there is no built-in calibration method. 
+    // I did it! It's not the way I'd preffer it to be but, honestly, I don't know how to fit it all better in this space (15.02.2021)
 
 
     // ADC for checking fuel level
@@ -213,7 +229,7 @@ int main() {
 
                 // `switch()` without `default` case is taking more space in output file. Huh, interesting.
                 default: 
-                    LCD.cursor(1, 1); LCD.sends("L//1337 - ", 1); 
+                    LCD.cursor(1, 1); LCD.sends("L//M - ", 1); 
                     LCD.sends(itoa(mode, buffer, 10), 1);
                 break;
             }
@@ -228,7 +244,7 @@ int main() {
                           ff = 10/ff; 
 
                     eeprom_update_float(&eeSavedData.eePulseDistance, ff);  // Calibration data is stored in EEPROM
-                    LCD.sends("L//2137", 1);
+                    // LCD.sends("L//K", 1);
                     LCD.cursor(0, 9);
                     ftoa(ff, res, 8);
                     LCD.sends(res, 1);
@@ -250,34 +266,86 @@ int main() {
 }
 
 
+unsigned long int millis() {
+    unsigned long int m = 0;
+    uint8_t oldSREG = SREG;
 
+    // Disable interrupts while we read timer0_millis or we might get an
+    // Inconsistent value (e.g. in the middle of a write to timer0_millis)
+    cli();
+    m = timer0_millis;
+    SREG = oldSREG;
+    sei();
+    return m;
+}
+
+ISR(TIMER0_OVF_vect) {
+    unsigned long int m = timer0_millis;
+    unsigned char f = timer0_fract;
+
+    m += MILLIS_INC;
+    f += FRACT_INC;
+    if(f >= FRACT_MAX) {
+        f -= FRACT_MAX;
+        m += 1;
+    }
+
+    timer0_fract = f;
+    timer0_millis = m;
+    timer0_overflowCount++;
+}
+
+// static volatile uint8_t modec = 3;
 ISR(TIMER1_OVF_vect) {
-    ++counter;
+    --counter;
 
-    if(injectorPulseTime < 800 && distPulseCount == 0 && toBeSaved == 1) saveData();
-    if(saveCounter > 45 && speed == 0 && toBeSaved == 1) saveData();
+    if(injectorPulseTime < 800 && distPulseCount == 0) saveData();
+    if(saveCounter <= 0 && speed == 0) saveData();
 
-    // Check if button is pressed for ~3 seconds
     if(!(PIND & (1<<PD7))) {
-        ++btnCnt;
-        if(btnCnt >= 12 && calibrationFlag == 0) calibrationFlag = 1;
-    } else btnCnt = 0;
+        --btnCnt;
+        // --modec;
+        // if(modec <= 0 && btnCnt >= 12) modec = 3;
 
-    if(counter > 3) {
+         // Check if button is pressed for ~3 seconds
+        if(calibrationFlag == 0) {
+            switch(btnCnt) {
+                case 12: 
+                    averageFuelConsumption = .0;
+                    saveData();
+                break;
+
+                case 8: 
+                    avgSpeedCount = 0;
+                    saveData();
+                break;
+
+                case 4: 
+                    usedFuel = .0;
+                    traveledDistance = 0;
+                    saveData();
+                break;
+            }
+        } 
+        
+         // Check if button is pressed for ~6 seconds
+        if(btnCnt <= 0 && calibrationFlag == 0) calibrationFlag = 1;
+    } else btnCnt = 24;
+
+    if(counter <= 0) {
         currentSpeed();
         fuelConsumption();
 
-        if(instantFuelConsumption > 1.0) toBeSaved = 1;
         if(speed > 5) {
             rangeDistance = (fuelLeft/averageFuelConsumption)*100;
             ++avgSpeedDivider;
             avgSpeed();
         }
         
-        ++saveCounter;
+        --saveCounter;
         if(!calibrationFlag) distPulseCount = 0;
         injectorPulseTime = 0;
-        counter = 0;
+        counter = 4;
     } TCNT1 = 34286;
 }
 
@@ -346,9 +414,7 @@ void saveData() {
     eeprom_update_byte(&eeSavedData.eeAverageSpeedCount, avgSpeedCount);
     eeprom_update_float(&eeSavedData.eeAvgSpeedDivider, avgSpeedDivider);
 
-    saveCounter = 0;
-    toBeSaved = 0;
-
+    saveCounter = 60;
     sei();
 }
 

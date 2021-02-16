@@ -5,7 +5,7 @@ PROGM_UC = m8
 CC = avr-gcc
 CFLAGS = -fshort-enums -ffunction-sections -funsigned-char -std=c99 -Os -DF_CPU=8000000UL -mmcu=$(TARGET)
 
-all: main.o lcd.o ftoa.o millis.o app ./build/app.bin
+all: main.o lcd.o ftoa.o app ./build/app.bin
 	avr-objcopy -O ihex -R .eeprom ./build/app.bin ./rel/app.hex
 
 flash: all
@@ -26,7 +26,7 @@ millis.o: ./millis.c ./millis.h
 
 
 app: main.o lcd.o ftoa.o
-	$(CC) -mmcu=$(TARGET) ./build/main.o ./build/lcd.o ./build/ftoa.o ./build/millis.o -o ./build/app.bin
+	$(CC) -mmcu=$(TARGET) ./build/main.o ./build/lcd.o ./build/ftoa.o -o ./build/app.bin
 
 
 clean:

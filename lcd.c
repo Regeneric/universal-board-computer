@@ -160,8 +160,8 @@ void screenLCDRender(void) {
 const struct lcdInterface LCD = {
 	.init = screenLCDInit,
 	.clear = screenLCDClear,
-	.power = screenLCDPower,
-	.setPixel = screenLCDSetPixel,
+	// .power = screenLCDPower,
+	// .setPixel = screenLCDSetPixel,
 	.sendc = screenLCDWriteChar,
 	.sends = screenLCDWriteString,
 	.cursor = screenLCDSetCursor,

@@ -1,6 +1,6 @@
-TARGET = atmega8
+TARGET = atmega328
 PROGM = usbasp
-PROGM_UC = m8
+PROGM_UC = m328
 
 CC = avr-gcc
 CFLAGS = -fshort-enums -ffunction-sections -funsigned-char -std=c99 -Os -DF_CPU=8000000UL -mmcu=$(TARGET)

@@ -57,7 +57,7 @@ volatile static float avgSpeedDivider = .0, traveledDistance = .0, sumInv = .0;
 volatile static float instantFuelConsumption = .0, averageFuelConsumption = .0, usedFuel = .0, fuelLeft = 0, fuelSumInv = .0;
 volatile static float injectorOpenTime = .0;
 
-volatile static uint8_t saveCounter = 60, btnCnt = 24, calibrationFlag = 0, pulseOverflows = 0;
+volatile static uint8_t saveCounter = 60, btnCnt = 24, calibrationFlag = 0, pulseOverflows = 0, mode = 3;
 volatile static uint8_t speed = 0, avgSpeedCount = 0;
 
 volatile static unsigned int counter = 4, distPulseCount = 0, injectorPulseTime = 0, injTimeHigh = 0, injTimeLow = 0, rangeDistance = 0;  // uint16_t
@@ -87,67 +87,68 @@ int main() {
     // For now, (07.02.2021, commit on GH no. 6adcdef, as I write this) there are 224 bytes of free space in flash memory.
     // Yes, bytes. And still there is no built-in calibration method. 
     // I did it! It's not the way I'd preffer it to be but, honestly, I don't know how to fit it all better in this space (15.02.2021)
+    // Today is the day when I'm ready to do some coding for 328 (25.02.2021)
 
 
     // ADC for checking fuel level
-    DDRC &= ~0x32;  // PC5/ADC as input
+    DDRC &= ~(1<<PC5);  // PC5/ADC as input
 
-    ADCSRA = 0x86;  // Enables ADC and sets prescaller to 64 (8 MHz, 128 for 16 MHz) (1<<ADEN)  ((1<<ADPS2) | (1<<ADPS1))
-    ADMUX = 0xC5;  // Internal 2.56V ref voltage with external capacitor, input channel select ((1<<REFS1) | (1<<REFS0))  ((1<<MUX2) | (1<<MUX0))
+    ADCSRA |= ((1<<ADEN) | (1<<ADPS2) | (1<<ADPS1));             // Enables ADC and sets prescaller to 64 (8 MHz, 128 for 16 MHz)
+    ADMUX |= ((1<<REFS1) | (1<<REFS0) | (1<<MUX2) | (1<<MUX0));  // Internal 2.56V ref voltage with external capacitor, input channel select
 
 
-    // VSS signal, injector signal and navigation buttons - Atmega 8
-    DDRD &= ~0x8C;  // PD2/INT0, PD3/INT1 and PD7 as input
-    PORTD = 0x8C;  // PD2/INT0, PD3/INT1 and PD7 internal pull-up resistor to avoid high impedance state of the pin
+    // VSS signal and injector signal - Atmega 328
+    DDRD &= ~(1<<PD3);  // PD3/INT1 as input
+    DDRD &= ~(1<<PD2);  // PD2/INT0 as input
+    PORTD |= ((1<<PD3) | (1<<PD2));  // PD2/INT0 and PD3/INT1internal pull-up resistor to avoid high impedance state of the pin
 
-    MCUCR = 0x6;  // FALLING edge of INT0 and ANY change of state of INT1 generates interrupt  (1<<ISC10)
-    GICR = 0xC0;  // Turns on INT0 and INT1  ((1<<INT1) | (1<<INT0))
+    EICRA |= (1<<ISC01);  // The FALLING edge on INT0 generates interrupt
+    EICRA |= (1<<ISC10);  // ANY change of state of INT1 generates interrupt
+    EIMSK |= ((1<<INT0) | (1<<INT1));    // Turns on INT0 and INT1
     
 
+    // Navigation buttons = Atmega 328
+    DDRD &= ~(1<<PD7);  // PD7/PCINT23 as input
+    DDRD &= ~(1<<PD6);  // PD6 as input
+    PORTD |= ((1<<PD7) | (1<<PD6));  // PD7/PCINT23 internal pull-up resistor
+
+    DDRB &= ~(1<<PB0);  // PB0/PCINT0 as input
+    PORTB |= (1<<PB0);  // PB0/PCINT0 internal pull-up resistor
+
+    PCICR |= ((1<<PCIE0) | (1<<PCIE2));  // Set PCIE0 and PCIE2 to enable PCMSK0 and PCMSK2 scan
+    PCIFR |= ((1<<PCIF0) | (1<<PCIF2));  // Set PCIF0 and PCIF2 to enable interrupt flasg mask
+    PCMSK0 |= (1<<PCINT0);   // Set PCINT0 to trigger an interrupt on state change 
+    PCMSK2 |= (1<<PCINT23);  // Set PCINT23 to trigger an interrupt on state change
+
+
     // 16 bit timer for VSS
-    TCCR1A = 0;  // Timer1 normal mode
-    TCCR1B = 0x3;  // Prescaler 64, causes overflow every 0.524288s (8 MHz crystal, 0.262144s for 16 MHz)  ((1<<CS10) | (1<<CS11))
-    TCNT1 = 34286;  // Counts from 34286 to 65535 - causes overflow every 0.25s (8 MHz crystal, 3036 for 16 MHz)
+    TCCR1A = 0;                         // Timer1 normal mode
+    TCCR1B |= ((1<<CS10) | (1<<CS11));  // Prescaler 64, causes overflow every 0.524288s (8 MHz crystal, 0.262144s for 16 MHz)
+    TIMSK1 |= (1<<TOIE1);               // Enable timer overflow interrupt
+    TCNT1 = 34286;                      // Counts from 34286 to 65535 - causes overflow every 0.25s (8 MHz crystal, 3036 for 16 MHz)
 
     // Counter for millis() function
-    TCCR0 = 0x3;  // Prescaler 64 ((1<<CS01) | (1<<CS00))
-    TCNT0 = 0;  // Counts from 0 to 255;
-
-    TIMSK = 0x5;  // Enable timer overflow interrupt  ((1<<TOIE1) | (1<<TOIE0))
+    TCCR0B |= ((1<<CS01) | (1<<CS00));    // Prescaler 64
+    TIMSK0 = (1<<TOIE0);                 // Enable timer overflow interrupt
+    TCNT0 = 0;                            // Counts from 0 to 255;
 
 
     // Button debouncing, mode change 
-	uint8_t i = 15, mode = 3;  // Counter and mode iterators
+	uint8_t i = 15;   // Counter and mode iterators
 	uint8_t buttonPressed = 0;  // Keeps track if button is pressed; 0 false, 1 true
 
-    loadData();  // Loads data from EEPROM
+    loadData();              // Loads data from EEPROM
     char buffer[8], res[8];  // Buffer for itoa() function
     LCD.init();
 
     sei();  // Global interrupts enabled
     while(1) {
-        if(!(PIND & (1<<PD7)) && !buttonPressed) {
-            while(i != 0) --i;
-            i = 15;
-
-            PORTD = i | (1<<PD7);
-            buttonPressed = 1;
-
-            --mode;
-            if(mode < 1) mode = 3;  // "Modes" of what should be displayed on the LCD
-        } else if((PIND & (1<<PD7)) && buttonPressed) {
-            buttonPressed = 0;
-            PORTD ^= (1<<PD7);
-        }
-        
-
         if(fuelLeft <= 0) {
             // ADC checks for level fuel in the tank
             ADCSRA |= (1<<ADSC);
             while(ADCSRA & (1<<ADSC));
             fuelLeft = ADC/15.0f;  // For the 68 liters tank
         }
-
         
         if(!calibrationFlag) {
             switch(mode) {
@@ -235,7 +236,7 @@ int main() {
             }
         } else {
             switch(mode) {
-                case 3: 
+                case 1: 
                     cli();  // Disable global interrupts to not corrupt the data
 
                     // Simple formula - distance/pulses
@@ -251,7 +252,7 @@ int main() {
                 break;
 
                 case 2:
-                case 1: 
+                case 3: 
                     sei();
                     LCD.sends(ltoa(distPulseCount, buffer, 10), 1);
                     LCD.cursor(0, 9);
@@ -295,40 +296,40 @@ ISR(TIMER0_OVF_vect) {
     timer0_overflowCount++;
 }
 
-// static volatile uint8_t modec = 3;
+
 ISR(TIMER1_OVF_vect) {
     --counter;
 
     if(injectorPulseTime < 800 && distPulseCount == 0) saveData();
     if(saveCounter <= 0 && speed == 0) saveData();
 
-    if(!(PIND & (1<<PD7))) {
+    if(!(PIND & (1<<PD6))) {
         --btnCnt;
         // --modec;
         // if(modec <= 0 && btnCnt >= 12) modec = 3;
 
-         // Check if button is pressed for ~3 seconds
-        if(calibrationFlag == 0) {
-            switch(btnCnt) {
-                case 12: 
-                    averageFuelConsumption = .0;
-                    saveData();
-                break;
+        // Check if button is pressed for ~3 seconds
+        // if(calibrationFlag == 0) {
+        //     switch(btnCnt) {
+        //         case 12: 
+        //             averageFuelConsumption = .0;
+        //             saveData();
+        //         break;
 
-                case 8: 
-                    avgSpeedCount = 0;
-                    saveData();
-                break;
+        //         case 8: 
+        //             avgSpeedCount = 0;
+        //             saveData();
+        //         break;
 
-                case 4: 
-                    usedFuel = .0;
-                    traveledDistance = 0;
-                    saveData();
-                break;
-            }
-        } 
+        //         case 4: 
+        //             usedFuel = .0;
+        //             traveledDistance = 0;
+        //             saveData();
+        //         break;
+        //     }
+        // } 
         
-         // Check if button is pressed for ~6 seconds
+        // Check if button is pressed for ~6 seconds
         if(btnCnt <= 0 && calibrationFlag == 0) calibrationFlag = 1;
     } else btnCnt = 24;
 
@@ -370,6 +371,24 @@ ISR(INT1_vect) {
 }
 
 
+// Navigation buttons - Atmega 328
+ISR(PCINT0_vect) {
+    if(!(PINB & (1<<PB0))) {
+        // Low state on PB0
+        ++mode;
+        if(mode > 3) mode = 1;
+    } 
+}
+
+ISR(PCINT2_vect) {
+    if(!(PIND & (1<<PD7))) {
+        // Low state on PD7
+        --mode;
+        if(mode < 1) mode = 3;
+    } 
+}
+
+
 
 void avgSpeed() {
     // Harmonic mean
@@ -386,7 +405,7 @@ void fuelConsumption() {
     float iotv = (injectorOpenTime*INJECTION_VALUE)*14400;  // 14400 because 3600 (seconds in hour) * 4 (no. of injectors)
     float inv = (injectorOpenTime * INJECTION_VALUE)*4;
 
-    injectorOpenTime = ((float)injectorPulseTime/1000);  // Converting to seconds
+    injectorOpenTime = ((float)injectorPulseTime/1000);     // Converting to seconds
     if(speed > 5) {
         instantFuelConsumption = (100*iotv)/speed;
 

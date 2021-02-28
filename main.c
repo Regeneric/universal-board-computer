@@ -50,12 +50,12 @@ static unsigned long int millis();
 
 
 static float PULSE_DISTANCE = .0;  // 0.00006823
-static const float INJECTION_VALUE = 0.0031667;  // Based on value that injector can inject 191.3 cc/min of fuel
+static float INJECTION_VALUE = .0f;  // 0.0025f - based on value that injector can inject 149.8 cc/min of fuel
 
 
 volatile static float avgSpeedDivider = .0, traveledDistance = .0, sumInv = .0;
 volatile static float instantFuelConsumption = .0, averageFuelConsumption = .0, usedFuel = .0, fuelLeft = 0, fuelSumInv = .0;
-volatile static float injectorOpenTime = .0;
+volatile static float injectorOpenTime = .0, ccMin = 100.0f;
 
 volatile static uint8_t saveCounter = 60, btnCnt = 24, calibrationFlag = 0, pulseOverflows = 0, mode = 3;
 volatile static uint8_t speed = 0, avgSpeedCount = 0;
@@ -70,6 +70,9 @@ typedef struct {
     float eeUsedFuel;
     float eeAvgSpeedDivider;
     float eePulseDistance;
+    float eeSumInv;
+    float eeFuelSumInv;
+    float eeInjectionValue;
     uint8_t eeAverageSpeedCount;  
 } eeStruct; eeStruct EEMEM eeSavedData;
 
@@ -93,24 +96,23 @@ int main() {
     // ADC for checking fuel level
     DDRC &= ~(1<<PC5);  // PC5/ADC as input
 
-    ADCSRA |= ((1<<ADEN) | (1<<ADPS2) | (1<<ADPS1));             // Enables ADC and sets prescaller to 64 (8 MHz, 128 for 16 MHz)
-    ADMUX |= ((1<<REFS1) | (1<<REFS0) | (1<<MUX2) | (1<<MUX0));  // Internal 2.56V ref voltage with external capacitor, input channel select
+    ADCSRA |= ((1<<ADEN) | (1<<ADPS2) | (1<<ADPS1));  // Enables ADC and sets prescaller to 64 (8 MHz, 128 for 16 MHz)
+    ADMUX |= ((1<<REFS1) | (1<<REFS0));  // Internal 1.1V ref voltage with external capacitor
+    ADMUX |= ((1<<MUX2) | (1<<MUX0));    // Input channel select
 
 
     // VSS signal and injector signal - Atmega 328
-    DDRD &= ~(1<<PD3);  // PD3/INT1 as input
-    DDRD &= ~(1<<PD2);  // PD2/INT0 as input
+    DDRD &= ~((1<<PD3) | (1<<PD2));  // PD3/INT1 and PD2/INT0 as input
     PORTD |= ((1<<PD3) | (1<<PD2));  // PD2/INT0 and PD3/INT1internal pull-up resistor to avoid high impedance state of the pin
 
     EICRA |= (1<<ISC01);  // The FALLING edge on INT0 generates interrupt
     EICRA |= (1<<ISC10);  // ANY change of state of INT1 generates interrupt
-    EIMSK |= ((1<<INT0) | (1<<INT1));    // Turns on INT0 and INT1
+    EIMSK |= ((1<<INT0) | (1<<INT1));  // Turns on INT0 and INT1
     
 
     // Navigation buttons = Atmega 328
-    DDRD &= ~(1<<PD7);  // PD7/PCINT23 as input
-    DDRD &= ~(1<<PD6);  // PD6 as input
-    PORTD |= ((1<<PD7) | (1<<PD6));  // PD7/PCINT23 internal pull-up resistor
+    DDRD &= ~((1<<PD7) | (1<<PD6));  // PD7/PCINT23 and PD6 as input    
+    PORTD |= ((1<<PD7) | (1<<PD6));  // PD7/PCINT23 and PD6 internal pull-up resistor
 
     DDRB &= ~(1<<PB0);  // PB0/PCINT0 as input
     PORTB |= (1<<PB0);  // PB0/PCINT0 internal pull-up resistor
@@ -128,13 +130,13 @@ int main() {
     TCNT1 = 34286;                      // Counts from 34286 to 65535 - causes overflow every 0.25s (8 MHz crystal, 3036 for 16 MHz)
 
     // Counter for millis() function
-    TCCR0B |= ((1<<CS01) | (1<<CS00));    // Prescaler 64
-    TIMSK0 = (1<<TOIE0);                 // Enable timer overflow interrupt
-    TCNT0 = 0;                            // Counts from 0 to 255;
+    TCCR0B |= ((1<<CS01) | (1<<CS00));  // Prescaler 64
+    TIMSK0 = (1<<TOIE0);                // Enable timer overflow interrupt
+    TCNT0 = 0;                          // Counts from 0 to 255;
 
 
     // Button debouncing, mode change 
-	uint8_t i = 15;   // Counter and mode iterators
+	uint8_t i = 15;             // Counter and mode iterators
 	uint8_t buttonPressed = 0;  // Keeps track if button is pressed; 0 false, 1 true
 
     loadData();              // Loads data from EEPROM
@@ -156,8 +158,13 @@ int main() {
                 // Main Screen
                     
                     // Range
-                    LCD.cursor(1, 1); LCD.sends("$%&  ", 1);  // Range symbol
-                    LCD.sends(itoa(rangeDistance, buffer, 10), 1);
+                    LCD.cursor(1, 1); LCD.sends("$%& ", 1);  // Range symbol
+                    if(rangeDistance > 100) {LCD.sendc(' ', 1); LCD.sends(itoa(rangeDistance, buffer, 10), 1);}
+                    else {
+                        LCD.sends("-(", 1);
+                        LCD.sends(itoa(rangeDistance, buffer, 10), 1);
+                        LCD.sends(")-", 1);
+                    }
                     LCD.cursor(65, 1); LCD.sends(" KM", 1);
                     LCD.cursor(1, 9); LCD.sends("--------------", 1);
                     
@@ -174,8 +181,10 @@ int main() {
                     // Average fuel consumption
                     LCD.cursor(1, 32); LCD.sends("--------------", 1);
                     LCD.cursor(5, 40); LCD.sends("#  ", 1);  // Average fuel consumption symbol
+                    
                     ftoa(averageFuelConsumption, res, 1);
-                    LCD.sends(res, 1); 
+                    if(averageFuelConsumption <= 0) LCD.sends("--.-", 1);
+                    else LCD.sends(res, 1); 
                     LCD.cursor(54, 40); LCD.sends("L/100", 1);
                 break;
 
@@ -204,7 +213,7 @@ int main() {
 
                     // Used fuel
                     ftoa(usedFuel, res, 2);
-                    LCD.cursor(1, 1); LCD.sends("%&$  ", 1);  // Range symbol
+                    LCD.cursor(1, 1); LCD.sends("&$  ", 1);  // Range symbol
                     if(usedFuel <= 0) LCD.sends("--.-", 1);
                     else if(usedFuel < 1 && usedFuel > 0) {LCD.sends("0", 1); LCD.sends(res, 1);}
                     else LCD.sends(res, 1);
@@ -219,13 +228,12 @@ int main() {
                     else LCD.sends(res, 2);
                     LCD.cursor(70, 22); LCD.sends("KM", 1);
 
-                    // // Left fuel
+                    // Left fuel
                     ftoa(fuelLeft, res, 0); 
                     LCD.cursor(1, 32); LCD.sends("--------------", 1);
                     LCD.cursor(5, 40); LCD.sends("!\"   ", 1);  // Fuel distributor symbol
                     LCD.sends(res, 1); 
                     LCD.cursor(70, 40); LCD.sends("L", 1);
-
                 break;
 
                 // `switch()` without `default` case is taking more space in output file. Huh, interesting.
@@ -244,14 +252,30 @@ int main() {
                           ff += distPulseCount;
                           ff = 10/ff; 
 
-                    eeprom_update_float(&eeSavedData.eePulseDistance, ff);  // Calibration data is stored in EEPROM
-                    // LCD.sends("L//K", 1);
+                    float inv = ccMin/1000;
+                          inv = inv/60;
+
+                    // Calibration data is stored in EEPROM
+                    eeprom_update_float(&eeSavedData.eePulseDistance, ff);
+                    eeprom_update_float(&eeSavedData.eeInjectionValue, inv);
+
+                    LCD.sends("L//K", 1);
                     LCD.cursor(0, 9);
                     ftoa(ff, res, 8);
                     LCD.sends(res, 1);
+
+                    LCD.cursor(0, 18);
+                    ftoa(inv, res, 8);
+                    LCD.sends(res, 1);
+                    
+                    sei();
                 break;
 
                 case 2:
+                    ftoa(ccMin, res, 1);
+                    LCD.sends(res, 1);
+                break;
+
                 case 3: 
                     sei();
                     LCD.sends(ltoa(distPulseCount, buffer, 10), 1);
@@ -305,29 +329,33 @@ ISR(TIMER1_OVF_vect) {
 
     if(!(PIND & (1<<PD6))) {
         --btnCnt;
-        // --modec;
-        // if(modec <= 0 && btnCnt >= 12) modec = 3;
 
         // Check if button is pressed for ~3 seconds
-        // if(calibrationFlag == 0) {
-        //     switch(btnCnt) {
-        //         case 12: 
-        //             averageFuelConsumption = .0;
-        //             saveData();
-        //         break;
+        if(calibrationFlag == 0 && (btnCnt <= 12 && btnCnt > 0)) {
+            switch(mode) {
+                case 3: 
+                    averageFuelConsumption = .0f;
 
-        //         case 8: 
-        //             avgSpeedCount = 0;
-        //             saveData();
-        //         break;
+                    saveData();
+                    loadData();
+                break;
 
-        //         case 4: 
-        //             usedFuel = .0;
-        //             traveledDistance = 0;
-        //             saveData();
-        //         break;
-        //     }
-        // } 
+                case 2: 
+                    avgSpeedCount = 0;
+
+                    saveData();
+                    loadData();
+                break;
+
+                case 1: 
+                    usedFuel = .0f;
+                    traveledDistance = .0f;
+                    
+                    saveData();
+                    loadData();
+                break;
+            }
+        } 
         
         // Check if button is pressed for ~6 seconds
         if(btnCnt <= 0 && calibrationFlag == 0) calibrationFlag = 1;
@@ -375,16 +403,22 @@ ISR(INT1_vect) {
 ISR(PCINT0_vect) {
     if(!(PINB & (1<<PB0))) {
         // Low state on PB0
-        ++mode;
-        if(mode > 3) mode = 1;
+        if(calibrationFlag == 1 && !(PIND & (1<<PD6))) ccMin -= 0.5f;
+        else {
+            ++mode;
+            if(mode > 3) mode = 1;
+        }
     } 
 }
 
 ISR(PCINT2_vect) {
     if(!(PIND & (1<<PD7))) {
         // Low state on PD7
-        --mode;
-        if(mode < 1) mode = 3;
+        if(calibrationFlag == 1 && !(PIND & (1<<PD6))) ccMin += 0.5f;
+        else {
+            --mode;
+            if(mode < 1) mode = 3;
+        }
     } 
 }
 
@@ -402,8 +436,8 @@ void currentSpeed() {speed = PULSE_DISTANCE * distPulseCount * 3600;}
 
 
 void fuelConsumption() {
-    float iotv = (injectorOpenTime*INJECTION_VALUE)*14400;  // 14400 because 3600 (seconds in hour) * 4 (no. of injectors)
-    float inv = (injectorOpenTime * INJECTION_VALUE)*4;
+    float iotv = (injectorOpenTime*INJECTION_VALUE)*21600;  // 21600 because 3600 (seconds in hour) * 6 (no. of injectors)
+    float inv = (injectorOpenTime*INJECTION_VALUE)*6;
 
     injectorOpenTime = ((float)injectorPulseTime/1000);     // Converting to seconds
     if(speed > 5) {
@@ -432,21 +466,28 @@ void saveData() {
 
     eeprom_update_byte(&eeSavedData.eeAverageSpeedCount, avgSpeedCount);
     eeprom_update_float(&eeSavedData.eeAvgSpeedDivider, avgSpeedDivider);
+    // eeprom_update_float(&eeSavedData.eeSumInv, sumInv);
+    // eeprom_update_float(&eeSavedData.eeFuelSumInv, fuelSumInv);
 
     saveCounter = 60;
     sei();
 }
 
 void loadData() {
+    cli();
+
     PULSE_DISTANCE = eeprom_read_float(&eeSavedData.eePulseDistance);
+    INJECTION_VALUE = eeprom_read_float(&eeSavedData.eeInjectionValue);
 
-    traveledDistance = isnan(eeprom_read_float(&eeSavedData.eeTraveledDistance)) ? 0 : eeprom_read_float(&eeSavedData.eeTraveledDistance);
+    traveledDistance = isnan(eeprom_read_float(&eeSavedData.eeTraveledDistance)) ? .0f : eeprom_read_float(&eeSavedData.eeTraveledDistance);
 
-    averageFuelConsumption = isnan(eeprom_read_float(&eeSavedData.eeAverageFuelConsumption)) ? 0 : eeprom_read_float(&eeSavedData.eeAverageFuelConsumption);
-    usedFuel = isnan(eeprom_read_float(&eeSavedData.eeUsedFuel)) ? 0 : eeprom_read_float(&eeSavedData.eeUsedFuel);
+    averageFuelConsumption = isnan(eeprom_read_float(&eeSavedData.eeAverageFuelConsumption)) ? .0f : eeprom_read_float(&eeSavedData.eeAverageFuelConsumption);
+    usedFuel = isnan(eeprom_read_float(&eeSavedData.eeUsedFuel)) ? .0f : eeprom_read_float(&eeSavedData.eeUsedFuel);
 
-    avgSpeedCount = isnan(eeprom_read_byte(&eeSavedData.eeAverageSpeedCount)) 
-                        ? 0 : (eeprom_read_byte(&eeSavedData.eeAverageSpeedCount) >= 255 
-                            ? 0 : eeprom_read_byte(&eeSavedData.eeAverageSpeedCount));
-    avgSpeedDivider = isnan(eeprom_read_float(&eeSavedData.eeAvgSpeedDivider)) ? 0 : eeprom_read_float(&eeSavedData.eeAvgSpeedDivider);
+    avgSpeedCount = isnan(eeprom_read_byte(&eeSavedData.eeAverageSpeedCount)) ? .0f : eeprom_read_byte(&eeSavedData.eeAverageSpeedCount);
+    avgSpeedDivider = isnan(eeprom_read_float(&eeSavedData.eeAvgSpeedDivider)) ? .0f : eeprom_read_float(&eeSavedData.eeAvgSpeedDivider);
+    // sumInv = isnan(eeprom_read_float(&eeSavedData.eeSumInv)) ? .0f : eeprom_read_float(&eeSavedData.eeSumInv);
+    // fuelSumInv = isnan(eeprom_read_float(&eeSavedData.eeFuelSumInv)) ? .0f : eeprom_read_float(&eeSavedData.eeFuelSumInv);
+
+    sei();
 }

@@ -156,6 +156,8 @@ int main() {
             switch(mode) {
                 case 3: 
                 // Main Screen
+                // LCD.cursor(1, 1);
+                // LCD.sends("Hello World", 1);
                     
                     // Range
                     LCD.cursor(1, 1); LCD.sends("$%& ", 1);  // Range symbol
@@ -186,6 +188,37 @@ int main() {
                     if(averageFuelConsumption <= 0) LCD.sends("--.-", 1);
                     else LCD.sends(res, 1); 
                     LCD.cursor(54, 40); LCD.sends("L/100", 1);
+                
+
+
+                    // float eeAverageFuelConsumption;
+                    // float eeTraveledDistance;
+                    // float eeUsedFuel;
+                    // float eeAvgSpeedDivider;
+                    // float eePulseDistance;
+                    // float eeSumInv;
+                    // float eeFuelSumInv;
+                    // float eeInjectionValue;
+                    // uint8_t eeAverageSpeedCount; 
+
+                    // LCD.cursor(1, 1);
+                    // LCD.sends(itoa(avgSpeedCount, buffer, 10), 1);
+                    
+                    // LCD.cursor(1, 9);
+                    // ftoa(averageFuelConsumption, res, 2);
+                    // LCD.sends(res, 1);
+
+                    // LCD.cursor(1, 18);
+                    // ftoa(avgSpeedDivider, res, 2);
+                    // LCD.sends(res, 1);
+
+                    // LCD.cursor(1, 27);
+                    // ftoa(sumInv, res, 2);
+                    // LCD.sends(res, 1);
+
+                    // LCD.cursor(1, 36);
+                    // ftoa(fuelSumInv, res, 2);
+                    // LCD.sends(res, 1);
                 break;
 
                 case 2: 
@@ -335,6 +368,7 @@ ISR(TIMER1_OVF_vect) {
             switch(mode) {
                 case 3: 
                     averageFuelConsumption = .0f;
+                    // fuelSumInv = .1f;
 
                     saveData();
                     loadData();
@@ -342,6 +376,7 @@ ISR(TIMER1_OVF_vect) {
 
                 case 2: 
                     avgSpeedCount = 0;
+                    // sumInv = .1f;
 
                     saveData();
                     loadData();
@@ -466,8 +501,9 @@ void saveData() {
 
     eeprom_update_byte(&eeSavedData.eeAverageSpeedCount, avgSpeedCount);
     eeprom_update_float(&eeSavedData.eeAvgSpeedDivider, avgSpeedDivider);
-    // eeprom_update_float(&eeSavedData.eeSumInv, sumInv);
-    // eeprom_update_float(&eeSavedData.eeFuelSumInv, fuelSumInv);
+    
+    eeprom_update_float(&eeSavedData.eeSumInv, sumInv);
+    eeprom_update_float(&eeSavedData.eeFuelSumInv, fuelSumInv);
 
     saveCounter = 60;
     sei();
@@ -479,15 +515,16 @@ void loadData() {
     PULSE_DISTANCE = eeprom_read_float(&eeSavedData.eePulseDistance);
     INJECTION_VALUE = eeprom_read_float(&eeSavedData.eeInjectionValue);
 
-    traveledDistance = isnan(eeprom_read_float(&eeSavedData.eeTraveledDistance)) ? .0f : eeprom_read_float(&eeSavedData.eeTraveledDistance);
+    traveledDistance = isnan(eeprom_read_float(&eeSavedData.eeTraveledDistance)) ? 0 : eeprom_read_float(&eeSavedData.eeTraveledDistance);
 
-    averageFuelConsumption = isnan(eeprom_read_float(&eeSavedData.eeAverageFuelConsumption)) ? .0f : eeprom_read_float(&eeSavedData.eeAverageFuelConsumption);
-    usedFuel = isnan(eeprom_read_float(&eeSavedData.eeUsedFuel)) ? .0f : eeprom_read_float(&eeSavedData.eeUsedFuel);
+    averageFuelConsumption = isnan(eeprom_read_float(&eeSavedData.eeAverageFuelConsumption)) ? 0 : eeprom_read_float(&eeSavedData.eeAverageFuelConsumption);
+    usedFuel = isnan(eeprom_read_float(&eeSavedData.eeUsedFuel)) ? 0 : eeprom_read_float(&eeSavedData.eeUsedFuel);
 
-    avgSpeedCount = isnan(eeprom_read_byte(&eeSavedData.eeAverageSpeedCount)) ? .0f : eeprom_read_byte(&eeSavedData.eeAverageSpeedCount);
-    avgSpeedDivider = isnan(eeprom_read_float(&eeSavedData.eeAvgSpeedDivider)) ? .0f : eeprom_read_float(&eeSavedData.eeAvgSpeedDivider);
-    // sumInv = isnan(eeprom_read_float(&eeSavedData.eeSumInv)) ? .0f : eeprom_read_float(&eeSavedData.eeSumInv);
-    // fuelSumInv = isnan(eeprom_read_float(&eeSavedData.eeFuelSumInv)) ? .0f : eeprom_read_float(&eeSavedData.eeFuelSumInv);
+    avgSpeedCount = isnan(eeprom_read_byte(&eeSavedData.eeAverageSpeedCount)) ? 0 : eeprom_read_byte(&eeSavedData.eeAverageSpeedCount);
+    avgSpeedDivider = isnan(eeprom_read_float(&eeSavedData.eeAvgSpeedDivider)) ? 0 : eeprom_read_float(&eeSavedData.eeAvgSpeedDivider);
+
+    sumInv = isnan(eeprom_read_float(&eeSavedData.eeSumInv)) ? 0 : eeprom_read_float(&eeSavedData.eeSumInv);
+    fuelSumInv = isnan(eeprom_read_float(&eeSavedData.eeFuelSumInv)) ? 0 : eeprom_read_float(&eeSavedData.eeFuelSumInv);
 
     sei();
 }

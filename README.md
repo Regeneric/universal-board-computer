@@ -91,6 +91,11 @@ Here are two examples, both are correct:
 
 Press "*NEXT*" button to save all the calibration data and then restart the device.
 
+### Fuel left in the tank
+You can use `PC6` pin for direct reading from the float in your fuel tank and then calibrate the output with the potentiometer, or you can enter the value by hand.
+
+To do so navigate to the last screen, press and hold "*FUN*" button and then you can add `0.5` liter of fuel by pressing "*NEXT*" or substract `0.5` liter of fuel by pressing "*PREV*".
+
 ### Navigation
 
 To clear data on the current screen, press and hold "*FUN*" button for **3 seconds**.

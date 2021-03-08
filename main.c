@@ -356,7 +356,7 @@ ISR(TIMER1_OVF_vect) {
 
     // Acceleration from 0 to 100 km/h measure time
     if(speed > 0 && speed < 100) ++accBuffer;
-    if(speed >= 100) accTime = accBuffer/4; 
+    if(speed >= 100) accTime = (float)accBuffer/4.0f; 
 
     // Data saving based on speed and time
     if(injectorPulseTime < 800 && distPulseCount == 0) saveData();

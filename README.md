@@ -15,23 +15,87 @@ Don't forget to use pull-up resistor for `PC6` aka `RESET` pin.
 
 You also need to intercept and read fuel injector pulse and VSS signal from your car. Without that **UBC** cannot work.
 
-Default pin on **Atmega 8** for reading user's input is `PD7`. 
+Default pins on **Atmega 328P** for reading user's input are `PD6, PD7 and PB0`. 
 
-**UBC** is designed to work with` 8 MHz internal oscillator` of **Atmega 8.**
+**UBC** is designed to work with `8 MHz internal oscillator` of **Atmega 328P.**
 
 ## Software
-```c
-// main.c:37-38
-volatile static const float PULSE_DISTANCE = 0.00006823;
-volatile static const float INJECTION_VALUE = 0.0031667;
-
-// Values for Audi 80 with ABK engine (2.0 115KM, gasoline), year 1993.
-```
-
 To get it work with your car, you need to count VSS pulses and divide known distance by them, and know how much liters of fuel your injector is injecting in one second.  
 
-For the VSS I drove 10 kilometeres and then divided it by the sum of all VSS pulses.
-For the fuel injector I read the datasheet and searched for the `cc/min` value.
+### VSS
+For the VSS you need to be in the calibration mode.
+On the first screen press and hold "*FUN*" button for **6** seconds. 
+Then you're going to see three lines:
+```c
+40 0
+41 0
+56 1
+```
+Line `40` is telling you how much pulses from the VSS it registered.  
+Line `41` is counting all overflows (if there were any).  
+Line `56` is number of all fuel injectors.
+
+To calibrate the device, you need to drive **exactly 10 kilometeres**. The more precise you are, the better.
+
+Here are two examples, both are correct:
+```c
+40 42627
+41 0
+56 6
+```
+
+```c
+40 12317
+41 3
+56 4
+```
+
+But if you already know the correct values, you can enter them by hand.  
+To do so press and hold "*FUN*" button, then you can add `500` pulses by pressing "*NEXT*" button or substract `500` pulses by pressing "*PREV*" button. 
+
+Then release all the buttons and start pressing "*FUN*" button until the number  of injectors is on the desired level.
+After all of that press "*NEXT*" to proceed to the next screen.
+
+### Injector
+
+For the fuel injector I read the datasheet and searched for the `cc/min` value.  
+In my case injectors can inject `149.8 cc/min`, but in the calibration mode we can add or substract only by `0.5`. So, the closest value would be `150 cc/min`.  
+
+On the calibration screen you are going to see two lines:
+```c
+50 100.0
+55 .0
+```
+
+Line `50` is the `cc/min` value.  
+Line `55` is the divide factor for the fuel left in tank, whe you use float to measure it.   
+
+The value is calculated using simple formula:  
+`divideFactor = 1024/maxTankCap`  
+So fo the 68 liters tank it would be ~15.  
+
+First you need to press and hold "*FUN*" button, then you can add `0.5` cc/min by pressing "*NEXT*" button or substract `0.5` cc/min by pressing "*PREV*" button. 
+
+Then release all the buttons and start pressing "*FUN*" button until the divide factor is on the desired level.
+
+Here are two examples, both are correct:
+```c
+50 150.0
+55 .5
+```
+
+```c
+50 195.5
+55 22
+```
+
+Press "*NEXT*" button to save all the calibration data and then restart the device.
+
+### Navigation
+
+To clear data on the current screen, press and hold "*FUN*" button for **3 seconds**.
+
+To access "secret menu" press and hold "*FUN*" button for **1 second** on one of the three screens.
 
 ### Debian
 ```bash

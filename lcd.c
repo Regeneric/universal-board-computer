@@ -1,5 +1,6 @@
 //  ​Universal Board Computer for cars with electronic MPI
-//  Copyright © 2021 IT Crowd, Marcin Kraśnicki
+//  Copyright © 2015, 2021-2022 IT Crowd, Hubert "hkk" Batkiewicz; 
+//  Sergey Denisov aka LittleBuster (DenisovS21@gmail.com)
 // 
 //  This file is part of UBC.
 //  UBC is free software: you can redistribute it and/or modify
@@ -16,6 +17,7 @@
 //  ​along with this program.  If not, see <https://www.gnu.org/licenses/>
 
 // <https://itcrowd.net.pl/>
+// <https://github.com/LittleBuster>
 
 
 #include "lcd.h"
@@ -41,10 +43,10 @@ static struct {
 
 static void write(uint8_t bytes, uint8_t isData) {
 	register uint8_t i;
-	PORT_LCD &= ~(1<<LCD_SCE);  // Enable controller
+	PORT_LCD &= ~(1<<LCD_SCE);  		 // Enable controller
 
 	if(isData) PORT_LCD |= (1<<LCD_DC);  // Sending data
-	else PORT_LCD &= ~(1<<LCD_DC);  // Sending commands
+	else PORT_LCD &= ~(1<<LCD_DC);  	 // Sending commands
 
 	for(i = 0; i != 8; ++i) {
 		if((bytes >> (7-i)) & 0x01) PORT_LCD |= (1<<LCD_DIN);
@@ -158,12 +160,12 @@ void screenLCDRender(void) {
 
 
 const struct lcdInterface LCD = {
-	.init = screenLCDInit,
-	.clear = screenLCDClear,
-	// .power = screenLCDPower,
-	// .setPixel = screenLCDSetPixel,
-	.sendc = screenLCDWriteChar,
-	.sends = screenLCDWriteString,
+	.init   = screenLCDInit,
+	.clear  = screenLCDClear,
+	.sendc  = screenLCDWriteChar,
+	.sends  = screenLCDWriteString,
 	.cursor = screenLCDSetCursor,
-	.render = screenLCDRender
+	.render = screenLCDRender,
+	// .power = screenLCDPower,
+	// .setPixel = screenLCDSetPixel
 };

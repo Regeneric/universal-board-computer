@@ -1,5 +1,6 @@
 //  ​Universal Board Computer for cars with electronic MPI
-//  Copyright © 2021 IT Crowd, Marcin Kraśnicki
+//  Copyright © 2015, 2021 IT Crowd, Hubert "hkk" Batkiewicz; 
+//  Sergey Denisov aka LittleBuster (DenisovS21@gmail.com)
 // 
 //  This file is part of UBC.
 //  UBC is free software: you can redistribute it and/or modify
@@ -15,7 +16,8 @@
 //  ​You should have received a copy of the GNU Affero General Public License
 //  ​along with this program.  If not, see <https://www.gnu.org/licenses/>
 
-// <https://itcrowd.net.pl/> 
+// <https://itcrowd.net.pl/>
+// <https://github.com/LittleBuster>
 
 
 #include <avr/pgmspace.h>
@@ -75,6 +77,6 @@ const uint8_t CHARSET[][5] PROGMEM = {
 	{ 0x63, 0x14, 0x08, 0x14, 0x63 }, // 58 X
 	{ 0x07, 0x08, 0x70, 0x08, 0x07 }, // 59 Y
 	{ 0x61, 0x51, 0x49, 0x45, 0x43 }, // 5a Z
-	{ 0x00, 0x00, 0x00, 0x00, 0x00 } // 7f
+	{ 0x00, 0x00, 0x00, 0x00, 0x00 }  // 7f
 
 };

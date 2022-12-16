@@ -3,9 +3,9 @@ PROGM = usbasp
 PROGM_UC = m328p
 
 CC = avr-gcc
-CFLAGS = -fshort-enums -ffunction-sections -funsigned-char -std=c99 -Os -DF_CPU=8000000UL -mmcu=$(TARGET)
+CFLAGS = -fshort-enums -ffunction-sections -funsigned-char -std=c11 -Os -w -ffreestanding -DF_CPU=16000000UL -mmcu=$(TARGET) -fno-rtti
 
-all: main.o lcd.o ftoa.o millis.o app ./build/app.bin
+all: main.o lcd.o ftoa.o millis.o oled.o app ./build/app.bin
 	avr-objcopy -O ihex -R .eeprom ./build/app.bin ./rel/app.hex
 
 flash: all
@@ -24,9 +24,11 @@ ftoa.o: ./ftoa.c ./ftoa.h
 millis.o: ./millis.c ./millis.h
 	$(CC) $(CFLAGS) -c -o ./build/millis.o ./millis.c
 
+oled.o: ./oled.c ./oled.h
+	$(CC) $(CFLAGS) -c -o ./build/oled.o ./oled.c
 
-app: main.o lcd.o ftoa.o millis.o
-	$(CC) -mmcu=$(TARGET) ./build/main.o ./build/lcd.o ./build/ftoa.o ./build/millis.o -o ./build/app.bin
+app: main.o lcd.o ftoa.o millis.o oled.o
+	$(CC) -mmcu=$(TARGET) ./build/main.o ./build/lcd.o ./build/ftoa.o ./build/millis.o ./build/oled.o -o ./build/app.bin
 
 
 clean:

@@ -1,5 +1,6 @@
 //  ​Universal Board Computer for cars with electronic MPI
-//  Copyright © 2021 IT Crowd, Marcin Kraśnicki
+//  Copyright © 2015, 2021-2022 IT Crowd, Hubert "hkk" Batkiewicz; 
+//  Sergey Denisov aka LittleBuster (DenisovS21@gmail.com)
 // 
 //  This file is part of UBC.
 //  UBC is free software: you can redistribute it and/or modify
@@ -16,6 +17,7 @@
 //  ​along with this program.  If not, see <https://www.gnu.org/licenses/>
 
 // <https://itcrowd.net.pl/>
+// <https://github.com/LittleBuster>
 
 
 #ifndef LCD_H
@@ -26,7 +28,7 @@
 
 // LCD's port
 #define PORT_LCD PORTB
-#define DDR_LCD DDRB
+#define DDR_LCD  DDRB
 
 // LCD's pins
 #define LCD_RST PB5  // RST
@@ -39,13 +41,13 @@
 
 struct lcdInterface {
     void (*init)(void);
-    void (*clear)(void);
-    // void (*power)(uint8_t on);
-    // void (*setPixel)(uint8_t xPos, uint8_t yPos, uint8_t value);
+    void (*clear)(void)  __attribute__((optimize("-O3")));
     void (*sendc)(char code, uint8_t scale);
     void (*sends)(const char* word, uint8_t scale);
     void (*cursor)(uint8_t xPos, uint8_t yPos);
-    void (*render)(void);
+    void (*render)(void) __attribute__((optimize("-O3")));
+    // void (*power)(uint8_t on);
+    // void (*setPixel)(uint8_t xPos, uint8_t yPos, uint8_t value);
 }; extern const struct lcdInterface LCD;
 
 #endif  // LCD_H
